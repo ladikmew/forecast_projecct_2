@@ -3,12 +3,41 @@ from getting_weather import get_weather_data
 from weather_model import check_bad_weather
 import socket
 import requests
+import dash
+import dash_core_components as dcc
+import dash_html_components as html
+import plotly.express as px
+import plotly.graph_objects as go
 
 app = Flask(__name__)
 
 
 # GET /weather?start_lat=34.0522&start_lon=-118.2437&end_lat=40.7128&end_lon=-74.0060 из лос-анджелеса в нью йорк
 
+dash_app = dash.Dash(__name__, server=app, url_base_pathname='/dash/')
+
+
+# Функция для создания графиков
+def create_weather_graph(weather_data):
+    # График температуры, скорости ветра и вероятности осадков
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=['Temperature (C)', 'Wind Speed (km/h)', 'Precipitation Probability (%)'],
+        y=[weather_data["Temperature (C)"], weather_data["Wind Speed (km/h)"],
+           weather_data["Precipitation Probability (%)"]],
+        mode='lines+markers',
+        name='Weather Data'
+    ))
+
+    fig.update_layout(
+        title='Weather Data Visualization',
+        xaxis_title='Weather Parameters',
+        yaxis_title='Values',
+        showlegend=True
+    )
+
+    return fig
 
 # Обработчик GET-запроса для отображения html версии
 @app.route('/', methods=['GET'])
@@ -24,6 +53,59 @@ def is_connected():
         return True
     except OSError:
         return False
+
+
+# Функция для создания одного графика с несколькими параметрами
+def create_combined_graph(start_weather, end_weather):
+    # Создаем график с несколькими параметрами
+    combined_graph = go.Figure()
+
+    # Температура
+    combined_graph.add_trace(go.Scatter(
+        x=['Start Point', 'End Point'],
+        y=[start_weather["Temperature (C)"], end_weather["Temperature (C)"]],
+        mode='lines+markers',
+        name='Temperature (°C)',
+        line=dict(color='red')
+    ))
+
+    # Влажность
+    combined_graph.add_trace(go.Scatter(
+        x=['Start Point', 'End Point'],
+        y=[start_weather["Humidity (%)"], end_weather["Humidity (%)"]],
+        mode='lines+markers',
+        name='Humidity (%)',
+        line=dict(color='blue')
+    ))
+
+    # Скорость ветра
+    combined_graph.add_trace(go.Scatter(
+        x=['Start Point', 'End Point'],
+        y=[start_weather["Wind Speed (km/h)"], end_weather["Wind Speed (km/h)"]],
+        mode='lines+markers',
+        name='Wind Speed (km/h)',
+        line=dict(color='green')
+    ))
+
+    # Вероятность осадков
+    combined_graph.add_trace(go.Scatter(
+        x=['Start Point', 'End Point'],
+        y=[start_weather["Precipitation Probability (%)"], end_weather["Precipitation Probability (%)"]],
+        mode='lines+markers',
+        name='Precipitation Probability (%)',
+        line=dict(color='purple')
+    ))
+
+    # Настройка графика
+    combined_graph.update_layout(
+        title='Weather Parameters Comparison',
+        xaxis_title='Points',
+        yaxis_title='Value',
+        legend=dict(title="Parameters", orientation="h", y=-0.2, x=0.5, xanchor="center"),
+        template="plotly_white"
+    )
+
+    return combined_graph
 
 # Обработчик POST-запроса для получения данных о погоде
 @app.route('/weather', methods=['POST'])
@@ -96,14 +178,44 @@ def get_weather():
                 "status": end_weather_status
             }
         }
-        print("Данные о погоде получены, это победа.")
-        return render_template('weather.html', result=result)
+
+        # Создаем объединенный график
+        combined_graph = create_combined_graph(start_weather, end_weather)
+
+        # Рендерим HTML с результатами и графиком
+        return render_template(
+            'weather.html',
+            result=result,
+            combined_graph=combined_graph.to_html(full_html=False)
+        )
 
     except Exception as e:
         return render_template(
             'error.html',
             message="Произошла неожиданная ошибка, проверьте подключение к сети и повторите попытку"
         )
+
+# Создаем Dash приложение с графиками
+dash_app.layout = html.Div([
+    html.H1("Weather Data Visualization", style={'text-align': 'center'}),
+    dcc.Graph(
+        id='start-point-graph',
+        figure=create_weather_graph({
+            "Temperature (C)": 25,
+            "Wind Speed (km/h)": 10,
+            "Precipitation Probability (%)": 20
+        })
+    ),
+    dcc.Graph(
+        id='end-point-graph',
+        figure=create_weather_graph({
+            "Temperature (C)": 22,
+            "Wind Speed (km/h)": 15,
+            "Precipitation Probability (%)": 50
+        })
+    )
+])
+
 
 
 def validate_coordinates(start_lat, start_lon, end_lat, end_lon):
